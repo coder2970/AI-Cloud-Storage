@@ -191,6 +191,8 @@ bool MysqlConn::execute(const std::string &sql) const {
     return conn_ && mysql_query(conn_, sql.c_str()) == 0;
 }
 
+MysqlResult::MysqlResult() : res_(NULL) {}
+
 MysqlResult::MysqlResult(MYSQL_RES *res) : res_(res) {}
 
 MysqlResult::~MysqlResult() {
@@ -198,6 +200,12 @@ MysqlResult::~MysqlResult() {
 }
 
 MYSQL_RES *MysqlResult::get() const { return res_; }
+
+void MysqlResult::reset(MYSQL_RES *res) {
+    if (res_ == res) return;
+    if (res_) mysql_free_result(res_);
+    res_ = res;
+}
 
 RedisConn::RedisConn() : conn_(NULL) {
     std::string ip = cfg_value("redis", "ip");

@@ -65,6 +65,7 @@ private:
 
 class MysqlResult {
 public:
+    MysqlResult();
     explicit MysqlResult(MYSQL_RES *res);
     ~MysqlResult();
 
@@ -72,6 +73,7 @@ public:
     MysqlResult &operator=(const MysqlResult &) = delete;
 
     MYSQL_RES *get() const;
+    void reset(MYSQL_RES *res);
 
 private:
     MYSQL_RES *res_;

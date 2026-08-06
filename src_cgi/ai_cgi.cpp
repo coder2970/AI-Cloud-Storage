@@ -610,7 +610,7 @@ static int load_global_ai_cache(MYSQL *conn, const char *md5, AiCacheData *data)
 {
     char sql[1024] = {0};
     char *escaped_md5 = NULL;
-    MYSQL_RES *res = NULL;
+    ycc::MysqlResult res;
     MYSQL_ROW row = NULL;
     unsigned long *lengths = NULL;
     int ret = -1;
@@ -631,23 +631,22 @@ static int load_global_ai_cache(MYSQL *conn, const char *md5, AiCacheData *data)
         goto END;
     }
 
-    res = mysql_store_result(conn);
-    if (!res) goto END;
+    res.reset(mysql_store_result(conn));
+    if (!res.get()) goto END;
 
-    row = mysql_fetch_row(res);
+    row = mysql_fetch_row(res.get());
     if (!row) {
         ret = 1;
         goto END;
     }
 
-    lengths = mysql_fetch_lengths(res);
+    lengths = mysql_fetch_lengths(res.get());
     data->id = row[0] ? atol(row[0]) : -1;
     data->status = row[4] ? atoi(row[4]) : 0;
 
     if (row[1]) {
         data->description = (char *)malloc(lengths[1] + 1);
         if (!data->description) {
-            mysql_free_result(res);
             free_ai_cache_data(data);
             return -1;
         }
@@ -658,7 +657,6 @@ static int load_global_ai_cache(MYSQL *conn, const char *md5, AiCacheData *data)
     if (row[2] && lengths[2] > 0) {
         data->embedding = (unsigned char *)malloc(lengths[2]);
         if (!data->embedding) {
-            mysql_free_result(res);
             free_ai_cache_data(data);
             return -1;
         }
@@ -669,7 +667,6 @@ static int load_global_ai_cache(MYSQL *conn, const char *md5, AiCacheData *data)
     if (row[3]) {
         data->model = (char *)malloc(lengths[3] + 1);
         if (!data->model) {
-            mysql_free_result(res);
             free_ai_cache_data(data);
             return -1;
         }
@@ -681,7 +678,6 @@ static int load_global_ai_cache(MYSQL *conn, const char *md5, AiCacheData *data)
 
 END:
     if (escaped_md5) free(escaped_md5);
-    if (res) mysql_free_result(res);
     if (ret != 0 && ret != 1) {
         free_ai_cache_data(data);
     }
@@ -883,7 +879,7 @@ static int append_user_faiss_entry(MYSQL *conn, const char *user, const char *md
     char update_sql[512] = {0};
     char *escaped_user = NULL;
     char *escaped_md5 = NULL;
-    MYSQL_RES *res = NULL;
+    ycc::MysqlResult res;
     MYSQL_ROW row = NULL;
     unsigned long *lengths = NULL;
     float *vec = NULL;
@@ -909,16 +905,16 @@ static int append_user_faiss_entry(MYSQL *conn, const char *user, const char *md
         goto END;
     }
 
-    res = mysql_store_result(conn);
-    if (!res) goto END;
+    res.reset(mysql_store_result(conn));
+    if (!res.get()) goto END;
 
-    row = mysql_fetch_row(res);
+    row = mysql_fetch_row(res.get());
     if (!row) {
         ret = -1;
         goto END;
     }
 
-    lengths = mysql_fetch_lengths(res);
+    lengths = mysql_fetch_lengths(res.get());
     if (row[2] && atol(row[2]) >= 0) {
         ret = (int)atol(row[2]);
         goto END;
@@ -956,7 +952,6 @@ static int append_user_faiss_entry(MYSQL *conn, const char *user, const char *md
     ret = faiss_id;
 
 END:
-    if (res) mysql_free_result(res);
     if (vec) free(vec);
     if (escaped_user) free(escaped_user);
     if (escaped_md5) free(escaped_md5);
@@ -969,7 +964,7 @@ static int append_pending_user_faiss_entries(MYSQL *conn, const char *user)
     char index_path[AI_PATH_BUF_LEN] = {0};
     char sql[1024] = {0};
     char *escaped_user = NULL;
-    MYSQL_RES *res = NULL;
+    ycc::MysqlResult res;
     MYSQL_ROW row = NULL;
     unsigned long *lengths = NULL;
     int lock_fd = -1;
@@ -1003,14 +998,14 @@ static int append_pending_user_faiss_entries(MYSQL *conn, const char *user)
         goto END;
     }
 
-    res = mysql_store_result(conn);
-    if (!res) goto END;
+    res.reset(mysql_store_result(conn));
+    if (!res.get()) goto END;
 
-    while ((row = mysql_fetch_row(res)) != NULL) {
+    while ((row = mysql_fetch_row(res.get())) != NULL) {
         int faiss_id = -1;
         float *vec = NULL;
 
-        lengths = mysql_fetch_lengths(res);
+        lengths = mysql_fetch_lengths(res.get());
         if (!row[1] || lengths[1] != (unsigned long)(embedding_dimension * sizeof(float))) {
             continue;
         }
@@ -1038,7 +1033,6 @@ static int append_pending_user_faiss_entries(MYSQL *conn, const char *user)
     ret = count;
 
 END:
-    if (res) mysql_free_result(res);
     if (escaped_user) free(escaped_user);
     release_user_lock(lock_fd);
     return ret;
@@ -1049,7 +1043,7 @@ static int rebuild_user_faiss_index(MYSQL *conn, const char *user)
     char index_path[AI_PATH_BUF_LEN] = {0};
     char sql[1024] = {0};
     char *escaped_user = NULL;
-    MYSQL_RES *res = NULL;
+    ycc::MysqlResult res;
     MYSQL_ROW row = NULL;
     unsigned long *lengths = NULL;
     int count = 0;
@@ -1092,14 +1086,14 @@ static int rebuild_user_faiss_index(MYSQL *conn, const char *user)
         goto END;
     }
 
-    res = mysql_store_result(conn);
-    if (!res) goto END;
+    res.reset(mysql_store_result(conn));
+    if (!res.get()) goto END;
 
-    while ((row = mysql_fetch_row(res)) != NULL) {
+    while ((row = mysql_fetch_row(res.get())) != NULL) {
         int faiss_id = -1;
         float *vec = NULL;
 
-        lengths = mysql_fetch_lengths(res);
+        lengths = mysql_fetch_lengths(res.get());
         if (!row[1] || lengths[1] != (unsigned long)(embedding_dimension * sizeof(float))) {
             continue;
         }
@@ -1131,7 +1125,6 @@ static int rebuild_user_faiss_index(MYSQL *conn, const char *user)
 
 END:
     faiss_set_auto_save(1);
-    if (res) mysql_free_result(res);
     if (escaped_user) free(escaped_user);
     release_user_lock(lock_fd);
     return ret;
@@ -1579,7 +1572,6 @@ static int handle_search(char *post_data)
             if (scores[i] < score_threshold) continue;
 
             char sql_cmd[2048] = {0};
-            MYSQL_RES *res = NULL;
             MYSQL_ROW row = NULL;
             snprintf(sql_cmd, sizeof(sql_cmd),
                      "SELECT uad.md5, ufl.file_name, uad.description, fi.url, fi.size, fi.type "
@@ -1594,10 +1586,10 @@ static int handle_search(char *post_data)
                 LOG(AI_LOG_MODULE, AI_LOG_PROC, "search query failed: %s\n", mysql_error(conn));
                 continue;
             }
-            res = mysql_store_result(conn);
-            if (!res) continue;
+            ycc::MysqlResult res(mysql_store_result(conn));
+            if (!res.get()) continue;
 
-            row = mysql_fetch_row(res);
+            row = mysql_fetch_row(res.get());
             if (row) {
                 Json::Value file_obj(Json::objectValue);
                 file_obj["md5"] = row[0] ? row[0] : "";
@@ -1617,7 +1609,6 @@ static int handle_search(char *post_data)
                 files_arr.append(file_obj);
                 result_count++;
             }
-            mysql_free_result(res);
         }
 
         resp["count"] = result_count;
