@@ -21,6 +21,7 @@
 #include <vector>
 
 extern "C" {
+#include "cgi_constants.h"
 #include "cfg.h"
 #include "md5.h"
 }
@@ -426,6 +427,91 @@ bool ensure_dir(const std::string &path) {
 #endif
     }
     return true;
+}
+
+namespace {
+
+bool increment_user_file_count(const MysqlConn &mysql, const std::string &escaped_user) {
+    std::string count;
+    if (mysql.query_one("select count from user_file_count where user='" + escaped_user + "' limit 1", &count)) {
+        return mysql.execute("update user_file_count set count = count + 1 where user='" + escaped_user + "'");
+    }
+    return mysql.execute("insert into user_file_count(user, count) values('" + escaped_user + "', 1)");
+}
+
+bool insert_user_file_record(const MysqlConn &mysql, const std::string &escaped_user,
+                             const std::string &escaped_md5, const std::string &escaped_filename) {
+    std::string create_time = mysql.escape(now_local_string());
+    return mysql.execute("insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) values ('" +
+                         escaped_user + "', '" + escaped_md5 + "', '" + create_time + "', '" +
+                         escaped_filename + "', 0, 0)");
+}
+
+} // namespace
+
+int bind_existing_file_to_user(const MysqlConn &mysql, const std::string &user,
+                               const std::string &md5, const std::string &filename) {
+    if (!mysql.ok()) return HTTP_RESP_FAIL;
+
+    std::string escaped_user = mysql.escape(user);
+    std::string escaped_md5 = mysql.escape(md5);
+    std::string escaped_filename = mysql.escape(filename);
+    std::string unused;
+
+    if (!mysql.query_one("select count from file_info where md5='" + escaped_md5 + "' limit 1", &unused)) {
+        return -1;
+    }
+
+    if (mysql.exists("select 1 from user_file_list where user='" + escaped_user +
+                     "' and md5='" + escaped_md5 + "' and file_name='" + escaped_filename + "' limit 1")) {
+        return HTTP_RESP_FILE_EXIST;
+    }
+
+    if (!mysql.execute("update file_info set count = count + 1 where md5='" + escaped_md5 + "'")) {
+        return HTTP_RESP_FAIL;
+    }
+
+    if (!insert_user_file_record(mysql, escaped_user, escaped_md5, escaped_filename)) {
+        return HTTP_RESP_FAIL;
+    }
+
+    return increment_user_file_count(mysql, escaped_user) ? HTTP_RESP_OK : HTTP_RESP_FAIL;
+}
+
+bool store_uploaded_file_for_user(const MysqlConn &mysql, const std::string &user,
+                                  const std::string &md5, const std::string &filename,
+                                  long size, const std::string &fileid,
+                                  const std::string &url, const std::string &type) {
+    if (!mysql.ok()) return false;
+
+    std::string escaped_user = mysql.escape(user);
+    std::string escaped_md5 = mysql.escape(md5);
+    std::string escaped_filename = mysql.escape(filename);
+    std::string escaped_fileid = mysql.escape(fileid);
+    std::string escaped_url = mysql.escape(url);
+    std::string escaped_type = mysql.escape(type);
+
+    if (mysql.exists("select 1 from user_file_list where user='" + escaped_user +
+                     "' and md5='" + escaped_md5 + "' and file_name='" + escaped_filename + "' limit 1")) {
+        return true;
+    }
+
+    std::string count;
+    if (mysql.query_one("select count from file_info where md5='" + escaped_md5 + "' limit 1", &count)) {
+        if (!mysql.execute("update file_info set count = count + 1 where md5='" + escaped_md5 + "'")) return false;
+    } else {
+        std::ostringstream sql;
+        sql << "insert into file_info (md5, file_id, url, size, type, count) values ('"
+            << escaped_md5 << "', '" << escaped_fileid << "', '" << escaped_url << "', '"
+            << size << "', '" << escaped_type << "', 1)";
+        if (!mysql.execute(sql.str())) return false;
+    }
+
+    if (!insert_user_file_record(mysql, escaped_user, escaped_md5, escaped_filename)) {
+        return false;
+    }
+
+    return increment_user_file_count(mysql, escaped_user);
 }
 
 std::string status_json(int code) {

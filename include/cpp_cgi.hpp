@@ -113,6 +113,12 @@ std::string now_local_string();
 std::string config_value(const std::string &section, const std::string &key);
 bool verify_token(const std::string &user, const std::string &token);
 bool ensure_dir(const std::string &path);
+int bind_existing_file_to_user(const MysqlConn &mysql, const std::string &user,
+                               const std::string &md5, const std::string &filename);
+bool store_uploaded_file_for_user(const MysqlConn &mysql, const std::string &user,
+                                  const std::string &md5, const std::string &filename,
+                                  long size, const std::string &fileid,
+                                  const std::string &url, const std::string &type);
 std::string status_json(int code);
 std::string login_json(int code, const std::string &token);
 std::string chunk_init_json(int code, int chunk_count, const std::string &uploaded_chunks);

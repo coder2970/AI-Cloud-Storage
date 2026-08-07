@@ -36,44 +36,8 @@ int deal_md5(const Md5Request &request) {
     ycc::MysqlConn mysql;
     if (!mysql.ok()) return HTTP_RESP_FAIL;
 
-    std::string user = mysql.escape(request.user);
-    std::string md5 = mysql.escape(request.md5);
-    std::string filename = mysql.escape(request.filename);
-
-    std::string file_count;
-    if (!mysql.query_one("select count from file_info where md5='" + md5 + "' limit 1", &file_count)) {
-        return HTTP_RESP_FAIL;
-    }
-
-    if (mysql.exists("select 1 from user_file_list where user='" + user +
-                     "' and md5='" + md5 + "' and file_name='" + filename + "' limit 1")) {
-        return HTTP_RESP_FILE_EXIST;
-    }
-
-    if (!mysql.execute("update file_info set count = count + 1 where md5='" + md5 + "'")) {
-        return HTTP_RESP_FAIL;
-    }
-
-    std::string create_time = mysql.escape(ycc::now_local_string());
-    std::string insert_user_file =
-        "insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) values ('" +
-        user + "', '" + md5 + "', '" + create_time + "', '" + filename + "', 0, 0)";
-    if (!mysql.execute(insert_user_file)) {
-        return HTTP_RESP_FAIL;
-    }
-
-    std::string current_count;
-    if (mysql.query_one("select count from user_file_count where user='" + user + "' limit 1", &current_count)) {
-        if (!mysql.execute("update user_file_count set count = count + 1 where user='" + user + "'")) {
-            return HTTP_RESP_FAIL;
-        }
-    } else {
-        if (!mysql.execute("insert into user_file_count (user, count) values('" + user + "', 1)")) {
-            return HTTP_RESP_FAIL;
-        }
-    }
-
-    return HTTP_RESP_OK;
+    int code = ycc::bind_existing_file_to_user(mysql, request.user, request.md5, request.filename);
+    return code == -1 ? HTTP_RESP_FAIL : code;
 }
 
 void handle_md5() {

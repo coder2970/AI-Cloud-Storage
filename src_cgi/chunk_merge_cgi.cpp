@@ -120,89 +120,6 @@ std::string make_file_url(const std::string &fileid) {
     return "http://" + host + ":" + port + "/" + fileid;
 }
 
-int bind_existing_file_to_user(const MergeRequest &request) {
-    ycc::MysqlConn mysql;
-    if (!mysql.ok()) return HTTP_RESP_FAIL;
-
-    std::string user = mysql.escape(request.user);
-    std::string md5 = mysql.escape(request.md5);
-    std::string filename = mysql.escape(request.filename);
-
-    std::string unused;
-    if (!mysql.query_one("select count from file_info where md5='" + md5 + "' limit 1", &unused)) {
-        return -1;
-    }
-
-    if (mysql.exists("select 1 from user_file_list where user='" + user +
-                     "' and md5='" + md5 + "' and file_name='" + filename + "' limit 1")) {
-        return HTTP_RESP_FILE_EXIST;
-    }
-
-    if (!mysql.execute("update file_info set count = count + 1 where md5='" + md5 + "'")) {
-        return HTTP_RESP_FAIL;
-    }
-
-    std::string create_time = mysql.escape(ycc::now_local_string());
-    if (!mysql.execute("insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) values ('" +
-                       user + "', '" + md5 + "', '" + create_time + "', '" + filename + "', 0, 0)")) {
-        return HTTP_RESP_FAIL;
-    }
-
-    std::string count;
-    if (mysql.query_one("select count from user_file_count where user='" + user + "' limit 1", &count)) {
-        if (!mysql.execute("update user_file_count set count = count + 1 where user='" + user + "'")) {
-            return HTTP_RESP_FAIL;
-        }
-    } else {
-        if (!mysql.execute("insert into user_file_count(user, count) values('" + user + "', 1)")) {
-            return HTTP_RESP_FAIL;
-        }
-    }
-
-    return HTTP_RESP_OK;
-}
-
-bool store_fileinfo_to_mysql(const MergeRequest &request, long size,
-                             const std::string &fileid, const std::string &url) {
-    ycc::MysqlConn mysql;
-    if (!mysql.ok()) return false;
-
-    std::string user = mysql.escape(request.user);
-    std::string md5 = mysql.escape(request.md5);
-    std::string filename = mysql.escape(request.filename);
-    std::string escaped_fileid = mysql.escape(fileid);
-    std::string escaped_url = mysql.escape(url);
-    std::string suffix = mysql.escape(file_suffix(request.filename));
-
-    if (mysql.exists("select 1 from user_file_list where user='" + user +
-                     "' and md5='" + md5 + "' and file_name='" + filename + "' limit 1")) {
-        return true;
-    }
-
-    std::string existing_count;
-    if (mysql.query_one("select count from file_info where md5='" + md5 + "' limit 1", &existing_count)) {
-        if (!mysql.execute("update file_info set count = count + 1 where md5='" + md5 + "'")) return false;
-    } else {
-        std::ostringstream sql;
-        sql << "insert into file_info (md5, file_id, url, size, type, count) values ('"
-            << md5 << "', '" << escaped_fileid << "', '" << escaped_url << "', '"
-            << size << "', '" << suffix << "', 1)";
-        if (!mysql.execute(sql.str())) return false;
-    }
-
-    std::string create_time = mysql.escape(ycc::now_local_string());
-    if (!mysql.execute("insert into user_file_list(user, md5, create_time, file_name, shared_status, pv) values ('" +
-                       user + "', '" + md5 + "', '" + create_time + "', '" + filename + "', 0, 0)")) {
-        return false;
-    }
-
-    std::string count;
-    if (mysql.query_one("select count from user_file_count where user='" + user + "' limit 1", &count)) {
-        return mysql.execute("update user_file_count set count = count + 1 where user='" + user + "'");
-    }
-    return mysql.execute("insert into user_file_count(user, count) values('" + user + "', 1)");
-}
-
 bool init_fastdfs_once() {
     std::string conf_path = ycc::config_value("dfs_path", "client");
     if (conf_path.empty()) return false;
@@ -273,7 +190,8 @@ void handle_merge() {
         return;
     }
 
-    int dedupe = bind_existing_file_to_user(request);
+    ycc::MysqlConn mysql;
+    int dedupe = ycc::bind_existing_file_to_user(mysql, request.user, request.md5, request.filename);
     if (dedupe == HTTP_RESP_OK || dedupe == HTTP_RESP_FILE_EXIST) {
         cleanup_state(request.md5);
         FCGI_printf("%s", ycc::status_json(HTTP_RESP_OK).c_str());
@@ -308,7 +226,8 @@ void handle_merge() {
     }
 
     std::string url = make_file_url(fileid);
-    if (!store_fileinfo_to_mysql(request, file_size, fileid, url)) {
+    if (!ycc::store_uploaded_file_for_user(mysql, request.user, request.md5, request.filename,
+                                           file_size, fileid, url, file_suffix(request.filename))) {
         FCGI_printf("%s", ycc::status_json(HTTP_RESP_FAIL).c_str());
         return;
     }
