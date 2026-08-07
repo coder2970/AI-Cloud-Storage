@@ -10,7 +10,7 @@ sudo docker compose ps
 
 
 关闭
-sudo docker compose down
+docker compose -f docker/docker-compose.yaml down
 ···
 
 

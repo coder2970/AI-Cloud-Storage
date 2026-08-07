@@ -11,7 +11,7 @@ export const makeTokenExpiredError = () => {
   return err;
 };
 
-export const isTokenExpiredCode = (code) => code === 1 || code === 4;
+export const isTokenExpiredCode = (code) => code === 4;
 
 const parseResponseBody = async (response) => {
   const text = await response.text();
